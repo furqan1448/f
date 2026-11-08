@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>منشئ النماذج</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--c:#7b1e3a;--bg:#f6f1f3;--card:#fff;--tx:#222;--bd:#ddd}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1416;--card:#271d20;--tx:#eee;--bd:#4a3a3f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:Tajawal,Tahoma,sans-serif;font-size:17px}
+#app{max-width:720px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px;margin-bottom:14px}
+.top{border-top:8px solid var(--c)}
+h1{margin:0 0 8px;color:var(--c);font-size:26px}
+h3{margin:0 0 10px}
+.in,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:var(--card);color:var(--tx);margin-top:6px}
+textarea{min-height:90px}
+.btn{background:var(--c);color:#fff;border:0;border-radius:8px;padding:10px 20px;font:inherit;cursor:pointer;margin:4px 0 4px 6px}
+.btn.s{background:transparent;color:var(--c);border:1px solid var(--c)}
+.btn.d{background:#b3261e}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+.opt{display:block;padding:6px 0}.opt input{margin-left:8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chip input{display:none}
+.chip span{display:inline-block;padding:8px 16px;border:1px solid var(--c);border-radius:20px;cursor:pointer}
+.chip input:checked+span{background:var(--c);color:#fff}
+.req{color:#b3261e}
+.err{border-color:#b3261e}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%}
+td,th{border:1px solid var(--bd);padding:8px;text-align:right;white-space:nowrap}th{background:var(--c);color:#fff}
+.link{direction:ltr;text-align:left;word-break:break-all;font-size:14px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const API = 'ضع_رابط_Apps_Script_هنا'; // رابط نشر الـ Web App
+
+const app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TYPES = {short:'نص قصير',long:'فقرة',radio:'اختيار واحد',check:'اختيار متعدد',select:'قائمة منسدلة',date:'تاريخ',number:'رقم',rating:'تقييم بالنجوم'};
+const CH = ['radio','check'];
+let PIN = '', F = null;
+const get = async p => (await fetch(API + '?' + new URLSearchParams(p))).json();
+const post = async b => (await fetch(API, {method:'POST', body:JSON.stringify(b)})).json();
+const rid = () => Math.random().toString(36).slice(2, 8);
+const link = id => location.origin + location.pathname + '?f=' + id;
+
+/* ================= النموذج العام ================= */
+async function pub(id) {
+  app.innerHTML = '<div class="card">جارٍ التحميل…</div>';
+  try {
+    const r = await get({action:'form', id});
+    if (!r.ok) { app.innerHTML = '<div class="card">النموذج غير موجود.</div>'; return; }
+    F = r.form;
+    app.innerHTML = `<div class="card top"><h1>${esc(F.title)}</h1><div>${esc(F.desc)}</div><div class="req">* حقل مطلوب</div></div>` +
+      F.questions.map(qHTML).join('') +
+      `<button class="btn" id="sb" onclick="submitF()">إرسال</button><div id="msg"></div>`;
+  } catch (e) { app.innerHTML = '<div class="card">تعذّر الاتصال بالخادم.</div>'; }
+}
+function qHTML(q) {
+  const n = 'n_' + q.id, o = q.options || [];
+  let b = '';
+  if (q.type === 'short') b = `<input class="in" name="${n}">`;
+  else if (q.type === 'long') b = `<textarea name="${n}"></textarea>`;
+  else if (q.type === 'date') b = `<input class="in" type="date" name="${n}">`;
+  else if (q.type === 'number') b = `<input class="in" type="number" name="${n}">`;
+  else if (q.type === 'select' || (q.type === 'radio' && q.display === 'select'))
+    b = `<select name="${n}"><option value="">اختر…</option>${o.map(x => `<option>${esc(x)}</option>`).join('')}</select>`;
+  else if (q.type === 'rating')
+    b = `<div class="chips">${[1,2,3,4,5].map(i => `<label class="chip"><input type="radio" name="${n}" value="${i}"><span>${i} ★</span></label>`).join('')}</div>`;
+  else {
+    const t = q.type === 'radio' ? 'radio' : 'checkbox';
+    b = q.display === 'buttons'
+      ? `<div class="chips">${o.map(x => `<label class="chip"><input type="${t}" name="${n}" value="${esc(x)}"><span>${esc(x)}</span></label>`).join('')}</div>`
+      : o.map(x => `<label class="opt"><input type="${t}" name="${n}" value="${esc(x)}">${esc(x)}</label>`).join('');
+  }
+  return `<div class="card" id="c_${q.id}"><h3>${esc(q.title)} ${q.required ? '<span class="req">*</span>' : ''}</h3>${b}</div>`;
+}
+function val(q) {
+  const n = 'n_' + q.id, s = document.querySelector(`select[name="${n}"]`);
+  if (s) return s.value;
+  if (q.type === 'check') return [...document.querySelectorAll(`[name="${n}"]:checked`)].map(x => x.value).join('، ');
+  if (q.type === 'radio' || q.type === 'rating') { const x = document.querySelector(`[name="${n}"]:checked`); return x ? x.value : ''; }
+  return document.querySelector(`[name="${n}"]`).value.trim();
+}
+async function submitF() {
+  const answers = {}; let bad = null;
+  F.questions.forEach(q => {
+    answers[q.id] = val(q);
+    const c = document.getElementById('c_' + q.id);
+    c.classList.toggle('err', q.required && !answers[q.id]);
+    if (q.required && !answers[q.id] && !bad) bad = c;
+  });
+  const msg = document.getElementById('msg');
+  if (bad) { bad.scrollIntoView({behavior:'smooth', block:'center'}); msg.innerHTML = '<p class="req">يرجى الإجابة عن الأسئلة المطلوبة.</p>'; return; }
+  const sb = document.getElementById('sb'); sb.disabled = true; sb.textContent = 'جارٍ الإرسال…';
+  try {
+    const r = await post({action:'submit', id:F.id, answers});
+    if (!r.ok) throw 0;
+    app.innerHTML = '<div class="card top"><h1>تم الإرسال</h1><div>شكراً لكم، تم تسجيل إجابتكم بنجاح.</div></div>';
+  } catch (e) { sb.disabled = false; sb.textContent = 'إرسال'; msg.innerHTML = '<p class="req">تعذّر الإرسال، حاولوا مرة أخرى.</p>'; }
+}
+
+/* ================= لوحة الإدارة ================= */
+function login(err) {
+  app.innerHTML = `<div class="card top"><h1>منشئ النماذج</h1>
+    <input class="in" id="pin" type="password" placeholder="الرمز السري" onkeydown="if(event.key==='Enter')doLogin()">
+    ${err ? '<p class="req">الرمز غير صحيح.</p>' : ''}
+    <button class="btn" onclick="doLogin()">دخول</button></div>`;
+}
+async function doLogin() {
+  PIN = document.getElementById('pin').value;
+  try { const r = await get({action:'list', pin:PIN}); r.ok ? list(r.forms) : login(true); }
+  catch (e) { login(true); }
+}
+async function reload() { const r = await get({action:'list', pin:PIN}); list(r.forms); }
+function list(fs) {
+  app.innerHTML = `<div class="card top"><h1>نماذجي</h1><button class="btn" onclick="newForm()">+ نموذج جديد</button></div>` +
+    (fs.length ? fs.map(f => `<div class="card"><h3>${esc(f.title)}</h3>
+      <div class="link">${link(f.id)}</div>
+      <button class="btn s" onclick="copyL('${f.id}')">نسخ الرابط</button>
+      <button class="btn s" onclick="window.open('${link(f.id)}')">فتح</button>
+      <button class="btn s" onclick="editForm('${f.id}')">تعديل</button>
+      <button class="btn s" onclick="resp('${f.id}')">الإجابات</button>
+      <button class="btn d" onclick="delForm('${f.id}')">حذف</button></div>`).join('') : '<div class="card">لا توجد نماذج بعد.</div>');
+}
+function copyL(id) { navigator.clipboard.writeText(link(id)); alert('تم نسخ الرابط'); }
+async function delForm(id) { if (!confirm('حذف النموذج؟')) return; await post({action:'delete', pin:PIN, id}); reload(); }
+function newForm() {
+  F = {id:rid() + rid(), title:'نموذج بدون عنوان', desc:'', questions:[{id:'q' + rid(), title:'', type:'short', required:false, options:[], display:'list'}]};
+  edit();
+}
+async function editForm(id) { const r = await get({action:'form', id}); F = r.form; edit(); }
+function edit() {
+  app.innerHTML = `<div class="card top"><input class="in" value="${esc(F.title)}" oninput="F.title=this.value" style="font-size:22px">
+    <textarea placeholder="وصف النموذج (اختياري)" oninput="F.desc=this.value">${esc(F.desc)}</textarea></div>` +
+    F.questions.map(qEdit).join('') +
+    `<button class="btn s" onclick="addQ()">+ إضافة سؤال</button>
+     <div style="margin-top:12px"><button class="btn" onclick="saveF()">حفظ النموذج</button>
+     <button class="btn s" onclick="reload()">رجوع</button></div>`;
+}
+function qEdit(q, i) {
+  const hasOpt = CH.includes(q.type) || q.type === 'select';
+  const disp = q.type === 'radio'
+    ? `<option value="list">نقاط اختيار</option><option value="buttons">أزرار</option><option value="select">قائمة منسدلة</option>`
+    : `<option value="list">نقاط اختيار</option><option value="buttons">أزرار</option>`;
+  return `<div class="card"><input class="in" placeholder="نص السؤال" value="${esc(q.title)}" oninput="F.questions[${i}].title=this.value">
+    <div class="row"><div><small>نوع السؤال</small><select onchange="F.questions[${i}].type=this.value;edit()">
+      ${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    ${CH.includes(q.type) ? `<div><small>طريقة العرض</small><select onchange="F.questions[${i}].display=this.value">${disp.replace(`value="${q.display}"`, `value="${q.display}" selected`)}</select></div>` : ''}</div>
+    ${hasOpt ? `<small>الخيارات (خيار في كل سطر)</small><textarea oninput="OP(${i},this.value)">${esc((q.options || []).join('\n'))}</textarea>` : ''}
+    <label class="opt"><input type="checkbox" ${q.required ? 'checked' : ''} onchange="F.questions[${i}].required=this.checked">سؤال مطلوب</label>
+    <button class="btn s" onclick="mv(${i},-1)">▲</button><button class="btn s" onclick="mv(${i},1)">▼</button>
+    <button class="btn s" onclick="dup(${i})">نسخ</button><button class="btn d" onclick="rm(${i})">حذف</button></div>`;
+}
+function OP(i, v) { F.questions[i].options = v.split('\n').map(s => s.trim()).filter(Boolean); }
+function addQ() { F.questions.push({id:'q' + rid(), title:'', type:'short', required:false, options:[], display:'list'}); edit(); }
+function mv(i, d) { const j = i + d; if (j < 0 || j >= F.questions.length) return; [F.questions[i], F.questions[j]] = [F.questions[j], F.questions[i]]; edit(); }
+function dup(i) { const c = JSON.parse(JSON.stringify(F.questions[i])); c.id = 'q' + rid(); F.questions.splice(i + 1, 0, c); edit(); }
+function rm(i) { F.questions.splice(i, 1); edit(); }
+async function saveF() {
+  if (!F.title.trim()) return alert('أدخلوا عنوان النموذج');
+  if (F.questions.some(q => !q.title.trim())) return alert('يوجد سؤال بلا نص');
+  if (F.questions.some(q => (CH.includes(q.type) || q.type === 'select') && !q.options.length)) return alert('أضيفوا خيارات للأسئلة ذات الاختيارات');
+  const r = await post({action:'save', pin:PIN, form:F});
+  if (!r.ok) return alert('تعذّر الحفظ');
+  app.innerHTML = `<div class="card top"><h1>تم الحفظ</h1><p>رابط النموذج:</p><div class="link">${link(F.id)}</div>
+    <button class="btn" onclick="copyL('${F.id}')">نسخ الرابط</button><button class="btn s" onclick="reload()">قائمة النماذج</button></div>`;
+}
+async function resp(id) {
+  const r = await get({action:'responses', id, pin:PIN});
+  window._R = r;
+  app.innerHTML = `<div class="card top"><h1>الإجابات (${r.rows.length})</h1>
+    <button class="btn" onclick="csv()">تنزيل CSV</button><button class="btn s" onclick="reload()">رجوع</button></div>
+    <div class="card tw"><table><tr>${r.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>
+    ${r.rows.map(x => `<tr>${x.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`;
+}
+function csv() {
+  const r = window._R, q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const t = '\ufeff' + [r.headers].concat(r.rows).map(x => x.map(q).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([t], {type:'text/csv;charset=utf-8'}));
+  a.download = 'responses.csv'; a.click();
+}
+
+/* ================= التوجيه ================= */
+const fp = new URLSearchParams(location.search).get('f');
+fp ? pub(fp) : login();
+</script>
+</body>
+</html>
